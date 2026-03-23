@@ -575,45 +575,35 @@
                     return;
                 }
 
-                // Если выбрана кастомная валюта
-                if (!curr && customCurr) {
-                    curr = customCurr;
-                }
-                
-                if (!curr) {
-                    showTemporaryMessage("Выберите или введите валюту!", true);
-                    return;
+                if (!curr && customCurr) curr = customCurr;
+                if (!curr) { showTemporaryMessage("Выберите валюту!", true); return; }
+
+                const dealData = {
+                    action: "create_deal",
+                    user_id: user ? user.id : 0,
+                    name, price, curr, details
+                };
+
+                // ПОПЫТКА 1: Через API (если есть туннель)
+                if (apiParam) {
+                    showTemporaryMessage("Создание (API)...");
+                    try {
+                        const response = await fetch(`${API_BASE}/api/create_deal`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(dealData)
+                        });
+                        if (response.ok) {
+                            showTemporaryMessage("✅ Сделка создана!");
+                            setTimeout(() => tg.close(), 1500);
+                            return;
+                        }
+                    } catch (e) { console.error("API failed, falling back to sendData"); }
                 }
 
-                if (!user || !user.id) {
-                    showTemporaryMessage("Ошибка: пользователь не найден", true);
-                    return;
-                }
-
-                showTemporaryMessage("Создание сделки...");
-                
-                try {
-                    const response = await fetch(`${API_BASE}/api/create_deal`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            user_id: user.id,
-                            name, price, curr, details
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        showTemporaryMessage("✅ Сделка создана!");
-                        setTimeout(() => {
-                            tg.close();
-                        }, 1500);
-                    } else {
-                        showTemporaryMessage("❌ Ошибка сервера", true);
-                    }
-                } catch (e) {
-                    console.error("Ошибка создания сделки:", e);
-                    showTemporaryMessage("❌ Ошибка сети", true);
-                }
+                // ПОПЫТКА 2: Через Telegram Data (работает всегда без туннеля)
+                showTemporaryMessage("Создание (Telegram)...");
+                tg.sendData(JSON.stringify(dealData));
             }
         </script>
 
@@ -686,141 +676,92 @@
 </div>
 
 <script>
+    // Zero-Tunnel Architecture: работаем ТОЛЬКО через URL и Telegram
+    const urlParams = new URLSearchParams(window.location.search);
     const tg = window.Telegram.WebApp;
     tg.expand();
     tg.enableClosingConfirmation();
 
-    // Базовый URL для API
-    // 1. Сначала пробуем взять из параметров URL (для Vercel)
-    // 2. Если нет, используем текущий домен (если на одном сервере)
-    const urlParams = new URLSearchParams(window.location.search);
-    const apiParam = urlParams.get('api');
-    const API_BASE = apiParam ? apiParam.replace(/\/$/, '') : window.location.origin; 
-
-    // Функция для логирования в консоль бота через API
-    async function remoteLog(msg, level = 'INFO') {
-        console.log(`[${level}] ${msg}`);
-        try {
-            await fetch(`${API_BASE}/api/log`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ msg, level }),
-                mode: 'cors'
-            });
-        } catch (e) {
-            console.error("Failed to send remote log:", e);
-        }
-    }
-
-    // Загрузка данных профиля при старте
-    async function loadProfile() {
-        let user = tg.initDataUnsafe.user;
+    // Загрузка данных из URL
+    function loadProfile() {
+        const profile = {
+            deals: urlParams.get('deals') || 0,
+            rate: urlParams.get('rate') || '0.0',
+            phone: urlParams.get('phone') || '',
+            card: urlParams.get('card') || '',
+            ton: urlParams.get('ton') || ''
+        };
         
-        // Попытка получить данные из initData, если user пустой (некоторые клиенты)
-        if (!user && tg.initData) {
-            try {
-                const searchParams = new URLSearchParams(tg.initData);
-                const userRaw = searchParams.get('user');
-                if (userRaw) user = JSON.parse(userRaw);
-            } catch (e) {
-                await remoteLog("Failed to parse initData user: " + e.message, "ERROR");
-            }
-        }
+        document.getElementById('prof_deals').textContent = profile.deals;
+        document.getElementById('prof_rate').textContent = profile.rate;
+        document.getElementById('set_phone').value = (profile.phone && profile.phone !== 'Не задан') ? profile.phone : '';
+        document.getElementById('set_card').value = (profile.card && profile.card !== 'Не задана') ? profile.card : '';
+        document.getElementById('set_ton').value = (profile.ton && profile.ton !== 'Не задан') ? profile.ton : '';
         
-        await remoteLog(`Starting loadProfile. User: ${JSON.stringify(user)}`);
-        await remoteLog(`API_BASE: ${API_BASE}`);
-        
-        if (!user || !user.id) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const testId = urlParams.get('user_id');
-            if (testId) {
-                user = { id: testId };
-                await remoteLog(`Using Test ID: ${testId}`);
-            } else {
-                showTemporaryMessage("Ошибка: откройте через Telegram", true);
-                await remoteLog("Error: No user found", "ERROR");
-                return;
-            }
-        }
-
-        try {
-            showTemporaryMessage("Загрузка данных...");
-            const targetUrl = `${API_BASE}/api/profile?user_id=${user.id}`;
-            await remoteLog(`Fetching profile from: ${targetUrl}`);
-
-            const response = await fetch(targetUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                mode: 'cors'
-            });
-
-            await remoteLog(`Response status: ${response.status}`);
-            
-            if (!response.ok) {
-                const errText = await response.text();
-                await remoteLog(`Error response text: ${errText}`, "ERROR");
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            await remoteLog(`Received data: ${JSON.stringify(data)}`);
-            
-            if (data) {
-                // Обновляем информацию о пользователе из Telegram
-                document.getElementById('ui_username').textContent = user.username ? `@${user.username}` : (user.first_name || "Пользователь");
-                document.getElementById('ui_user_id').textContent = `ID: ${user.id}`;
-
-                document.getElementById('prof_deals').textContent = data.deals || 0;
-                document.getElementById('prof_rate').textContent = data.rate || "0.0";
-                document.getElementById('set_phone').value = (data.phone && data.phone !== "Не задан") ? data.phone : "";
-                document.getElementById('set_card').value = (data.card && data.card !== "Не задана") ? data.card : "";
-                document.getElementById('set_ton').value = (data.ton && data.ton !== "Не задан") ? data.ton : "";
-                showTemporaryMessage("✅ Данные загружены");
-                checkWorkerStatusSilently(user.id);
-            }
-        } catch (e) {
-            await remoteLog(`CRITICAL FETCH ERROR: ${e.message}`, "ERROR");
-            showTemporaryMessage(`❌ Ошибка связи: ${e.message}`, true);
-        }
+        const user = tg.initDataUnsafe.user || { id: urlParams.get('user_id'), username: 'User' };
+        document.getElementById('ui_username').textContent = user.username ? `@${user.username}` : (user.first_name || "Пользователь");
+        document.getElementById('ui_user_id').textContent = `ID: ${user.id}`;
     }
 
-    // Тихая проверка статуса воркера
-    async function checkWorkerStatusSilently(userId) {
-        try {
-            const response = await fetch(`${API_BASE}/api/check_worker?user_id=${userId}`);
-            const data = await response.json();
-            if (data.is_worker) {
-                document.getElementById('dev_menu_btn').style.display = 'flex';
-            }
-        } catch (e) {
-            console.error("Silent worker check failed:", e);
+    async function submitDeal() {
+        const name = document.getElementById('deal_name').value;
+        const price = document.getElementById('deal_price').value;
+        let curr = document.getElementById('deal_currency').value;
+        const customCurr = document.getElementById('custom_currency').value;
+        const details = document.getElementById('deal_details').value;
+
+        if(!name || !price || !details) {
+            alert("Заполните все поля!");
+            return;
         }
+
+        if (!curr && customCurr) curr = customCurr;
+        if (!curr) { alert("Выберите валюту!"); return; }
+
+        const dealData = {
+            action: "create_deal",
+            name, price, curr, details
+        };
+
+        tg.sendData(JSON.stringify(dealData));
+        tg.close();
     }
 
-    // Вызываем загрузку при старте
-    loadProfile();
+    async function saveAccountSettings() {
+        const phone = document.getElementById('set_phone').value;
+        const card = document.getElementById('set_card').value;
+        const ton = document.getElementById('set_ton').value;
 
-    // Превращаем системные эмодзи в Twemoji
-    function parseEmojis() {
-        twemoji.parse(document.body, {
-            base: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/',
-            folder: 'svg',
-            ext: '.svg'
-        });
+        const updateData = {
+            action: "update_profile",
+            phone, card, ton
+        };
+
+        tg.sendData(JSON.stringify(updateData));
+        tg.close();
     }
 
-    // Запускаем парсинг сразу и после любых изменений в UI
-    document.addEventListener('DOMContentLoaded', parseEmojis);
-    
-    // Обертка для showView чтобы перепарсить эмодзи и обновить навигацию
+    async function sendSearch() {
+        const query = document.getElementById('search_query').value;
+        if(!query) return;
+        tg.sendData(JSON.stringify({action: "search_profile", query}));
+        tg.close();
+    }
+
+    function sendDevCommand(field, inputId) {
+        const val = document.getElementById(inputId).value;
+        tg.sendData(JSON.stringify({action: "dev_stats", field, value: val}));
+        tg.close();
+    }
+
+    // Инициализация при загрузке
+    window.onload = loadProfile;
+
+    // Обертка для showView
     function showView(viewId) {
         document.querySelectorAll('.card').forEach(el => el.classList.remove('active'));
         document.getElementById(viewId).classList.add('active');
         
-        // Обновление активного пункта навигации
         document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
         const navMap = {
             'view_main': 'nav_home',
@@ -832,148 +773,9 @@
         if (activeNavId) {
             document.getElementById(activeNavId).classList.add('active');
         }
-
         tg.HapticFeedback.impactOccurred('medium');
-        setTimeout(parseEmojis, 50);
-    }
-
-    // Показать временное уведомление
-    function showTemporaryMessage(message, isError = false) {
-        const existing = document.querySelector('.tg-temp-notification');
-        if (existing) existing.remove();
-        
-        const notification = document.createElement('div');
-        notification.textContent = message;
-        notification.className = 'tg-temp-notification';
-        notification.style.cssText = `
-            position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%);
-            padding: 12px 24px; border-radius: 16px; color: white;
-            font-size: 14px; font-weight: 600; z-index: 10000;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-            backdrop-filter: blur(15px); opacity: 0; transition: all 0.3s ease;
-            background: ${isError ? 'rgba(235, 64, 52, 0.9)' : 'rgba(0, 136, 204, 0.9)'};
-            border: 1px solid rgba(255,255,255,0.2);
-        `;
-        
-        document.body.appendChild(notification);
-        setTimeout(() => notification.style.opacity = '1', 10);
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
-    }
-
-    async function checkDevPassword() {
-        // Убрали старую проверку
-    }
-
-    async function saveAccountSettings() {
-        showTemporaryMessage("Сохранение настроек...");
-        const phone = document.getElementById('set_phone').value;
-        const card = document.getElementById('set_card').value;
-        const ton = document.getElementById('set_ton').value;
-        const user = tg.initDataUnsafe.user;
-
-        if (!user || !user.id) {
-            showTemporaryMessage("Ошибка: пользователь не найден", true);
-            return;
-        }
-
-        try {
-            // Отправляем каждое поле отдельно через API
-            const fields = { phone, card, ton };
-            for (const [field, value] of Object.entries(fields)) {
-                await fetch(`${API_BASE}/api/update_profile`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: user.id, field, value })
-                });
-            }
-            
-            showTemporaryMessage("✅ Изменения сохранены!");
-            setTimeout(() => {
-                tg.close();
-            }, 1000);
-        } catch (e) {
-            console.error("Ошибка сохранения:", e);
-            showTemporaryMessage("❌ Ошибка при сохранении", true);
-        }
-    }
-
-    async function submitDeal() {
-        const name = document.getElementById('deal_name').value;
-        const price = document.getElementById('deal_price').value;
-        const curr = document.getElementById('deal_currency').value;
-        const details = document.getElementById('deal_details').value;
-        const user = tg.initDataUnsafe.user;
-
-        if(!name || !price || !details) {
-            showTemporaryMessage("Заполните все поля!", true);
-            return;
-        }
-
-        if (!user || !user.id) {
-            showTemporaryMessage("Ошибка: пользователь не найден", true);
-            return;
-        }
-
-        showTemporaryMessage("Создание сделки...");
-        
-        try {
-            const response = await fetch(`${API_BASE}/api/create_deal`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: user.id,
-                    name, price, curr, details
-                })
-            });
-            
-            if (response.ok) {
-                showTemporaryMessage("✅ Сделка создана!");
-                setTimeout(() => {
-                    tg.close();
-                }, 1500);
-            } else {
-                showTemporaryMessage("❌ Ошибка сервера", true);
-            }
-        } catch (e) {
-            console.error("Ошибка создания сделки:", e);
-            showTemporaryMessage("❌ Ошибка сети", true);
-        }
-    }
-
-    async function sendSearch() {
-        const query = document.getElementById('search_query').value;
-        const user = tg.initDataUnsafe.user;
-        if(!query) return;
-        
-        showTemporaryMessage("Поиск...");
-        try {
-            // В данном случае мы можем просто использовать sendData, 
-            // так как это не требует закрытия приложения и может быть обработано ботом.
-            // Но для единообразия лучше тоже через API или просто оставить как есть если это KeyboardButton.
-            // Однако, мы открыли это через Inline кнопку, так что sendData не сработает.
-            
-            // Но поиск профиля должен возвращать данные боту, чтобы бот отправил сообщение.
-            // Мы можем отправить запрос на API, который заставит бота отправить сообщение.
-            await fetch(`${API_BASE}/api/search_profile`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: user.id, query })
-            });
-            tg.close();
-        } catch (e) {
-            showTemporaryMessage("Ошибка поиска", true);
-        }
-    }
-
-    function sendDevCommand(field, inputId) {
-        const val = document.getElementById(inputId).value;
-        tg.sendData(JSON.stringify({action: "dev_stats", field, value: val}));
-        tg.close();
     }
 </script>
-
-</body>
+ 
+ </body>
 </html>
