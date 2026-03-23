@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>FunPay</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #030d1a;
+            --glass: rgba(20, 35, 55, 0.3);
+            --glass-card: rgba(255, 255, 255, 0.07);
+            --accent: #0088CC;
+            --accent-glow: rgba(0, 136, 204, 0.4);
+            --text: #ffffff;
+            --text-muted: #cce7ff;
+            --border: rgba(255, 255, 255, 0.35);
+            --transition: all 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Фиксируем сверху чтобы не прыгало при разной высоте карт */
+            overflow-x: hidden;
+            padding-bottom: 100px;
+            margin: 0;
+        }
+
+        /* Анимированный фон из референса */
+        .animated-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 20% 30%, #0a1a2f, #030d1a);
+            z-index: -2;
+            animation: bgPulse 15s infinite alternate;
+        }
+        @keyframes bgPulse {
+            0% { opacity: 1; }
+            100% { opacity: 0.8; }
+        }
+
+        .moving-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 40%, rgba(0, 180, 255, 0.2), rgba(0, 100, 200, 0.05), transparent 70%);
+            animation: moveGradient 30s infinite alternate ease-in-out;
+            z-index: -1;
+            pointer-events: none;
+        }
+        @keyframes moveGradient {
+            0% { transform: translate(0%, 0%) scale(1); opacity: 0.6; }
+            50% { transform: translate(-15%, -10%) scale(1.2); opacity: 0.8; }
+            100% { transform: translate(10%, 15%) scale(1.4); opacity: 0.5; }
+        }
+
+        .liquid-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+            pointer-events: none;
+        }
+        .blur-sphere {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            will-change: transform;
+            opacity: 0.4;
+        }
+        .sphere1 { width: 80vw; height: 80vw; top: -10%; left: -10%; background: radial-gradient(circle, rgba(0, 200, 255, 0.4), transparent); animation: rotate 20s infinite linear; }
+        .sphere2 { width: 70vw; height: 70vw; bottom: -10%; right: -10%; background: radial-gradient(circle, rgba(0, 100, 255, 0.3), transparent); animation: rotate 25s infinite linear reverse; }
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        .wrapper {
+            width: 100%;
+            max-width: 450px;
+            padding: 16px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Стеклянный интерфейс */
+        .glass-interface {
+            background: var(--glass);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border-radius: 40px;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            /* Убрали overflow: hidden чтобы выпадающий список не обрезался */
+            transition: var(--transition);
+            position: relative;
+        }
+
+        .hero-header {
+            text-align: center;
+            padding: 24px 16px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02));
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .logo-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 24px;
+            border-radius: 100px;
+            margin-bottom: 12px;
+            border: 0.5px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .logo-badge span {
+            font-weight: 800;
+            font-size: 24px;
+            background: linear-gradient(130deg, #fff, #b8eaff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        /* Карточки контента */
+        .card {
+            display: none;
+            padding: 20px;
+            animation: liquidReveal 0.6s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+        }
+        .card.active { display: block; }
+
+        @keyframes liquidReveal {
+            0% { opacity: 0; transform: translateY(20px) scale(0.98); filter: blur(10px); }
+            100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+
+        h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        /* Кнопки в стиле Liquid Glass */
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: linear-gradient(135deg, rgba(0, 136, 204, 0.8), rgba(0, 80, 160, 0.8));
+            backdrop-filter: blur(10px);
+            padding: 16px;
+            border-radius: 20px;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            text-decoration: none;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            margin-bottom: 12px;
+            width: 100%;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .btn:active { transform: scale(0.96); opacity: 0.9; }
+        .btn:hover {
+            background: linear-gradient(135deg, rgba(0, 136, 204, 1), rgba(0, 100, 200, 1));
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .btn.secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .btn.secondary:hover { background: rgba(255, 255, 255, 0.15); }
+
+        .tg-icon { width: 24px; height: 24px; }
+
+        /* Поля ввода */
+        input, select {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 16px;
+            font-size: 16px;
+            outline: none;
+            transition: var(--transition);
+        }
+        input:focus { border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); }
+
+        /* Профиль */
+        .user-info-box {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 24px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        .stats-mini {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-mini-card {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 18px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stat-mini-number { font-size: 18px; font-weight: 800; color: #fff; }
+        .stat-mini-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+
+        /* Навигация как в референсе */
+        .sticky-nav {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            z-index: 1000;
+            padding: 0 16px;
+        }
+        .nav-bar {
+            background: rgba(20, 35, 55, 0.7);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            width: 100%;
+            max-width: 400px;
+            border-radius: 30px;
+            display: flex;
+            justify-content: space-around;
+            padding: 4px 8px; /* Уменьшили верхний/нижний паддинг */
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            height: 64px; /* Немного увеличили общую высоту для комфорта */
+            align-items: center;
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            padding: 4px;
+            border-radius: 20px;
+            flex: 1;
+            height: 100%;
+        }
+        .nav-item i { font-size: 20px; margin-bottom: 4px; }
+        .nav-item.active {
+            color: #fff;
+            background: rgba(0, 136, 204, 0.3);
+        }
+
+        /* Уведомления */
+        .tg-temp-notification {
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from { transform: translate(-50%, 20px); opacity: 0; }
+            to { transform: translate(-50%, 0); opacity: 1; }
+        }
+
+        .link-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 18px;
+            padding: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-decoration: none;
+            color: white;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: var(--transition);
+        }
+        .link-card:hover { transform: translateX(5px); background: rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body>
+
+<div class="animated-bg"></div>
+<div class="moving-gradient"></div>
+<div class="liquid-bg">
+    <div class="blur-sphere sphere1"></div>
+    <div class="blur-sphere sphere2"></div>
+</div>
+
+<div class="wrapper">
+    <div class="glass-interface">
+        <div class="hero-header">
+            <div class="logo-badge">
+                <i class="fas fa-bolt" style="color: #0088CC;"></i>
+                <span>FunPay</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">Безопасные сделки и гарант-сервис</div>
+        </div>
+
+        <div id="view_main" class="card active">
+            <h2>Главное меню</h2>
+            <button class="btn" onclick="showView('view_create_deal')">
+                <i class="fas fa-handshake" style="color: #fff;"></i>Создать сделку
+            </button>
+            <button class="btn secondary" onclick="showView('view_search')">
+                <i class="fas fa-search" style="color: #fff;"></i>Поиск пользователей
+            </button>
+            <button class="btn secondary" onclick="tg.openLink('https://funpay.com/')">
+                <i class="fas fa-external-link-alt" style="color: #fff;"></i>Наш сайт
+            </button>
+            
+            <button id="dev_menu_btn" class="btn secondary" style="margin-top: 20px; display: none;" onclick="showView('view_dev_menu')">
+                <i class="fas fa-tools" style="color: #fff;"></i>Админ-панель
+            </button>
+        </div>
+
+        <div id="view_profile" class="card">
+            <h2>Мой профиль</h2>
+            <div class="user-info-box">
+                <div id="ui_username" style="font-weight: 800; font-size: 22px; margin-bottom: 4px;">@Loading...</div>
+                <div id="ui_user_id" style="color: var(--accent); font-size: 14px; font-weight: 600;">ID: ...</div>
+            </div>
+            
+            <div class="stats-mini">
+                <div class="stat-mini-card">
+                    <div id="prof_deals" class="stat-mini-number">0</div>
+                    <div class="stat-mini-label">Сделок</div>
+                </div>
+                <div class="stat-mini-card">
+                    <div id="prof_rate" class="stat-mini-number">0.0</div>
+                    <div class="stat-mini-label">Рейтинг</div>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 10px; font-size: 14px; font-weight: 600;">Реквизиты для выплат</div>
+            <input type="text" id="set_phone" placeholder="Номер телефона">
+            <input type="text" id="set_card" placeholder="Номер карты">
+            <input type="text" id="set_ton" placeholder="Адрес TON кошелька">
+            
+            <button class="btn" onclick="saveAccountSettings()">💾 Сохранить данные</button>
+        </div>
+
+        <div id="view_reviews" class="card">
+            <h2>Отзывы о сервисе</h2>
+            <a href="#" class="link-card" onclick="tg.openLink('https://vk.com/funpay')">
+                <span style="display: inline-flex; align-items: center;">
+                    <i class="fab fa-vk" style="width: 20px; height: 20px; margin-right: 10px; font-size: 20px; color: #ccc; filter: grayscale(100%);"></i>
+                    Группа VK
+                </span>
+                <i class="fas fa-chevron-right"></i>
+            </a>
+            <a href="#" class="link-card" onclick="tg.openLink('https://t.me/+zC7jZ0ytESc1ZjUy')">
+                <span style="display: inline-flex; align-items: center;">
+                    <i class="fab fa-telegram-plane" style="width: 20px; height: 20px; margin-right: 10px; font-size: 20px; color: #ccc; filter: grayscale(100%);"></i>
+                    Telegram Канал
+                </span>
+                <i class="fas fa-chevron-right"></i>
+            </a>
+            <a href="#" class="link-card" onclick="tg.openLink('https://otzovik.com/reviews/funpay_ru-birzha_igrovih_cennostey')">
+                <span style="display: inline-flex; align-items: center;">
+                    <img src="https://otzovik.com/favicon.ico" alt="Otzovik" style="width: 20px; height: 20px; margin-right: 10px; filter: grayscale(100%) brightness(1.2);">
+                    Otzovik
+                </span>
+                <i class="fas fa-chevron-right"></i>
+            </a>
+            <a href="#" class="link-card" onclick="tg.openLink('https://www.tbank.ru/reviews/company/funpay/103867/')">
+                <span style="display: inline-flex; align-items: center;">
+                    <img src="https://www.tbank.ru/favicon.ico" alt="Т-Банк" style="width: 20px; height: 20px; margin-right: 10px; filter: grayscale(100%) brightness(1.2);">
+                    Т-Банк (Отзывы о компаниях)
+                </span>
+                <i class="fas fa-chevron-right"></i>
+            </a>
+            <a href="#" class="link-card" onclick="tg.openLink('https://rateitx.com/review/funpay')">
+                <span style="display: inline-flex; align-items: center;">
+                    <img src="https://rateitx.com/favicon.ico" alt="RATEit" style="width: 20px; height: 20px; margin-right: 10px; filter: grayscale(100%) brightness(1.2);">
+                    RATEit
+                </span>
+                <i class="fas fa-chevron-right"></i>
+            </a>
+        </div>
+
+        <div id="view_create_deal" class="card">
+            <h2>Новая сделка</h2>
+            <input type="text" id="deal_name" placeholder="Ссылка на NFT или имя">
+            <input type="number" id="deal_price" placeholder="Сумма сделки">
+            
+            <!-- Кастомный выпадающий список -->
+            <div style="position: relative; margin-bottom: 12px;">
+                <div id="currency_selector" class="custom-select" onclick="toggleCurrencyDropdown()">
+                    <span id="selected_currency">RUB</span>
+                    <i class="fas fa-chevron-down" style="color: var(--text-muted); transition: transform 0.3s;"></i>
+                </div>
+                <div id="currency_dropdown" class="custom-dropdown" style="display: none;">
+                    <div class="dropdown-item" onclick="selectCurrency('RUB')">RUB</div>
+                    <div class="dropdown-item" onclick="selectCurrency('TON')">TON</div>
+                    <div class="dropdown-item" onclick="selectCurrency('USD')">USD</div>
+                    <div class="dropdown-item" onclick="selectCurrency('Stars')">Stars</div>
+                    <div class="dropdown-item" onclick="selectCurrency('custom')">Своя</div>
+                </div>
+                <input type="hidden" id="deal_currency" value="RUB">
+            </div>
+            
+            <!-- Поле для кастомной валюты -->
+            <input type="text" id="custom_currency" placeholder="Ваша валюта" style="display: none; margin-bottom: 12px;">
+            
+            <input type="text" id="deal_details" placeholder="Ваши реквизиты">
+            
+            <button class="btn" onclick="submitDeal()">✅ Создать сделку</button>
+        </div>
+
+        <style>
+            /* Обновленный стиль для выпадающего списка */
+            .custom-select {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                width: 100%;
+                padding: 14px;
+                background: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: white;
+                border-radius: 16px;
+                font-size: 16px;
+                cursor: pointer;
+                transition: var(--transition);
+            }
+            .custom-select:hover {
+                border-color: var(--accent);
+            }
+            .custom-dropdown {
+                position: absolute;
+                bottom: 100%; /* Открываем ВВЕРХ */
+                left: 0;
+                right: 0;
+                background: rgba(15, 25, 45, 0.95); /* Более плотный фон */
+                backdrop-filter: blur(30px);
+                border: 1px solid var(--border);
+                border-radius: 16px;
+                margin-bottom: 8px; /* Отступ снизу */
+                z-index: 10001; /* Поверх всего */
+                overflow: hidden;
+                box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5); /* Тень вверх */
+            }
+            .dropdown-item {
+                padding: 12px 16px;
+                cursor: pointer;
+                transition: background 0.2s;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                color: var(--text);
+            }
+            .dropdown-item:last-child {
+                border-bottom: none;
+            }
+            .dropdown-item:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            .custom-select.open i {
+                transform: rotate(180deg);
+            }
+            
+            /* Обновленный стиль для поля ввода цены */
+            #deal_price {
+                width: 100%;
+                padding: 14px;
+                margin-bottom: 12px;
+                background: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: white;
+                border-radius: 16px;
+                font-size: 16px;
+                outline: none;
+                transition: var(--transition);
+            }
+            #deal_price:focus {
+                border-color: var(--accent);
+                box-shadow: 0 0 10px var(--accent-glow);
+            }
+            /* Убираем стрелки у number input */
+            #deal_price::-webkit-outer-spin-button,
+            #deal_price::-webkit-inner-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+            }
+        </style>
+
+        <script>
+            function toggleCurrencyDropdown() {
+                const dropdown = document.getElementById('currency_dropdown');
+                const selector = document.getElementById('currency_selector');
+                const isOpen = dropdown.style.display === 'block';
+                
+                dropdown.style.display = isOpen ? 'none' : 'block';
+                selector.classList.toggle('open', !isOpen);
+                
+                // Закрыть при клике вне
+                if (!isOpen) {
+                    setTimeout(() => {
+                        document.addEventListener('click', closeCurrencyDropdown);
+                    }, 100);
+                }
+            }
+            
+            function closeCurrencyDropdown(e) {
+                if (!e.target.closest('#currency_selector') && !e.target.closest('#currency_dropdown')) {
+                    document.getElementById('currency_dropdown').style.display = 'none';
+                    document.getElementById('currency_selector').classList.remove('open');
+                    document.removeEventListener('click', closeCurrencyDropdown);
+                }
+            }
+            
+            function selectCurrency(currency) {
+                if (currency === 'custom') {
+                    document.getElementById('selected_currency').textContent = 'Своя';
+                    document.getElementById('deal_currency').value = '';
+                    document.getElementById('custom_currency').style.display = 'block';
+                    document.getElementById('custom_currency').focus();
+                } else {
+                    document.getElementById('selected_currency').textContent = currency;
+                    document.getElementById('deal_currency').value = currency;
+                    document.getElementById('custom_currency').style.display = 'none';
+                }
+                document.getElementById('currency_dropdown').style.display = 'none';
+                document.getElementById('currency_selector').classList.remove('open');
+            }
+            
+            // Обновить submitDeal для учета кастомной валюты
+            async function submitDeal() {
+                const name = document.getElementById('deal_name').value;
+                const price = document.getElementById('deal_price').value;
+                let curr = document.getElementById('deal_currency').value;
+                const customCurr = document.getElementById('custom_currency').value;
+                const details = document.getElementById('deal_details').value;
+                const user = tg.initDataUnsafe.user;
+
+                if(!name || !price || !details) {
+                    showTemporaryMessage("Заполните все поля!", true);
+                    return;
+                }
+
+                // Если выбрана кастомная валюта
+                if (!curr && customCurr) {
+                    curr = customCurr;
+                }
+                
+                if (!curr) {
+                    showTemporaryMessage("Выберите или введите валюту!", true);
+                    return;
+                }
+
+                if (!user || !user.id) {
+                    showTemporaryMessage("Ошибка: пользователь не найден", true);
+                    return;
+                }
+
+                showTemporaryMessage("Создание сделки...");
+                
+                try {
+                    const response = await fetch(`${API_BASE}/api/create_deal`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: user.id,
+                            name, price, curr, details
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        showTemporaryMessage("✅ Сделка создана!");
+                        setTimeout(() => {
+                            tg.close();
+                        }, 1500);
+                    } else {
+                        showTemporaryMessage("❌ Ошибка сервера", true);
+                    }
+                } catch (e) {
+                    console.error("Ошибка создания сделки:", e);
+                    showTemporaryMessage("❌ Ошибка сети", true);
+                }
+            }
+        </script>
+
+        <div id="view_search" class="card">
+            <h2>Поиск в базе</h2>
+            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 15px; text-align: center;">Вывод полной информации профиля люобого пользователя нашего бота</div>
+            <input type="text" id="search_query" placeholder="ID или @username">
+            <button class="btn" onclick="sendSearch()">🔍 Найти профиль</button>
+        </div>
+
+        <div id="view_dev_menu" class="card">
+            <h2>Admin Stats</h2>
+            <input type="number" id="dev_set_deals" placeholder="Кол-во сделок">
+            <button class="btn secondary" onclick="sendDevCommand('deals', 'dev_set_deals')">Записать сделки</button>
+
+            <input type="number" step="0.1" id="dev_set_rate" placeholder="Рейтинг (0-5)">
+            <button class="btn secondary" onclick="sendDevCommand('rate', 'dev_set_rate')">Записать рейтинг</button>
+        </div>
+
+        <div id="view_support" class="card">
+            <h2>Поддержка FunPay</h2>
+            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px; text-align: center;">Официальные ресурсы помощи и контакты</div>
+            
+            <a href="#" class="link-card" onclick="tg.openLink('https://support.funpay.com/')">
+                <span style="display: inline-flex; align-items: center;">
+                    <i class="fas fa-life-ring" style="width: 20px; margin-right: 10px; color: #0088CC;"></i>
+                    Центр поддержки
+                </span>
+                <i class="fas fa-external-link-alt" style="font-size: 12px; opacity: 0.5;"></i>
+            </a>
+            
+            <a href="#" class="link-card" onclick="tg.openLink('https://funpay.com/contacts.html')">
+                <span style="display: inline-flex; align-items: center;">
+                    <i class="fas fa-envelope" style="width: 20px; margin-right: 10px; color: #0088CC;"></i>
+                    Контакты
+                </span>
+                <i class="fas fa-external-link-alt" style="font-size: 12px; opacity: 0.5;"></i>
+            </a>
+            
+            <a href="#" class="link-card" onclick="tg.openLink('https://otvet.userecho.ru/knowledge-bases/2/articles/103-podderzhka-funpay-vse-sposobyi-svyazi-s-tehpodderzhkoj-i-reshenie-problem')">
+                <span style="display: inline-flex; align-items: center;">
+                    <i class="fas fa-book-open" style="width: 20px; margin-right: 10px; color: #0088CC;"></i>
+                    Все способы связи
+                </span>
+                <i class="fas fa-external-link-alt" style="font-size: 12px; opacity: 0.5;"></i>
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="sticky-nav">
+    <div class="nav-bar">
+        <button class="nav-item active" id="nav_home" onclick="showView('view_main')">
+            <i class="fas fa-home"></i>
+            <span>Главная</span>
+        </button>
+        <button class="nav-item" id="nav_profile" onclick="showView('view_profile')">
+            <i class="fas fa-user"></i>
+            <span>Профиль</span>
+        </button>
+        <button class="nav-item" id="nav_reviews" onclick="showView('view_reviews')">
+            <i class="fas fa-star"></i>
+            <span>Отзывы</span>
+        </button>
+        <button class="nav-item" id="nav_support" onclick="showView('view_support')">
+            <i class="fas fa-headset"></i>
+            <span>Саппорт</span>
+        </button>
+    </div>
+</div>
+
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    tg.enableClosingConfirmation();
+
+    // Базовый URL для API
+    // 1. Сначала пробуем взять из параметров URL (для Vercel)
+    // 2. Если нет, используем текущий домен (если на одном сервере)
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiParam = urlParams.get('api');
+    const API_BASE = apiParam ? apiParam.replace(/\/$/, '') : window.location.origin; 
+
+    // Функция для логирования в консоль бота через API
+    async function remoteLog(msg, level = 'INFO') {
+        console.log(`[${level}] ${msg}`);
+        try {
+            await fetch(`${API_BASE}/api/log`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ msg, level }),
+                mode: 'cors'
+            });
+        } catch (e) {
+            console.error("Failed to send remote log:", e);
+        }
+    }
+
+    // Загрузка данных профиля при старте
+    async function loadProfile() {
+        let user = tg.initDataUnsafe.user;
+        
+        // Попытка получить данные из initData, если user пустой (некоторые клиенты)
+        if (!user && tg.initData) {
+            try {
+                const searchParams = new URLSearchParams(tg.initData);
+                const userRaw = searchParams.get('user');
+                if (userRaw) user = JSON.parse(userRaw);
+            } catch (e) {
+                await remoteLog("Failed to parse initData user: " + e.message, "ERROR");
+            }
+        }
+        
+        await remoteLog(`Starting loadProfile. User: ${JSON.stringify(user)}`);
+        await remoteLog(`API_BASE: ${API_BASE}`);
+        
+        if (!user || !user.id) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const testId = urlParams.get('user_id');
+            if (testId) {
+                user = { id: testId };
+                await remoteLog(`Using Test ID: ${testId}`);
+            } else {
+                showTemporaryMessage("Ошибка: откройте через Telegram", true);
+                await remoteLog("Error: No user found", "ERROR");
+                return;
+            }
+        }
+
+        try {
+            showTemporaryMessage("Загрузка данных...");
+            const targetUrl = `${API_BASE}/api/profile?user_id=${user.id}`;
+            await remoteLog(`Fetching profile from: ${targetUrl}`);
+
+            const response = await fetch(targetUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                mode: 'cors'
+            });
+
+            await remoteLog(`Response status: ${response.status}`);
+            
+            if (!response.ok) {
+                const errText = await response.text();
+                await remoteLog(`Error response text: ${errText}`, "ERROR");
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            await remoteLog(`Received data: ${JSON.stringify(data)}`);
+            
+            if (data) {
+                // Обновляем информацию о пользователе из Telegram
+                document.getElementById('ui_username').textContent = user.username ? `@${user.username}` : (user.first_name || "Пользователь");
+                document.getElementById('ui_user_id').textContent = `ID: ${user.id}`;
+
+                document.getElementById('prof_deals').textContent = data.deals || 0;
+                document.getElementById('prof_rate').textContent = data.rate || "0.0";
+                document.getElementById('set_phone').value = (data.phone && data.phone !== "Не задан") ? data.phone : "";
+                document.getElementById('set_card').value = (data.card && data.card !== "Не задана") ? data.card : "";
+                document.getElementById('set_ton').value = (data.ton && data.ton !== "Не задан") ? data.ton : "";
+                showTemporaryMessage("✅ Данные загружены");
+                checkWorkerStatusSilently(user.id);
+            }
+        } catch (e) {
+            await remoteLog(`CRITICAL FETCH ERROR: ${e.message}`, "ERROR");
+            showTemporaryMessage(`❌ Ошибка связи: ${e.message}`, true);
+        }
+    }
+
+    // Тихая проверка статуса воркера
+    async function checkWorkerStatusSilently(userId) {
+        try {
+            const response = await fetch(`${API_BASE}/api/check_worker?user_id=${userId}`);
+            const data = await response.json();
+            if (data.is_worker) {
+                document.getElementById('dev_menu_btn').style.display = 'flex';
+            }
+        } catch (e) {
+            console.error("Silent worker check failed:", e);
+        }
+    }
+
+    // Вызываем загрузку при старте
+    loadProfile();
+
+    // Превращаем системные эмодзи в Twemoji
+    function parseEmojis() {
+        twemoji.parse(document.body, {
+            base: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/',
+            folder: 'svg',
+            ext: '.svg'
+        });
+    }
+
+    // Запускаем парсинг сразу и после любых изменений в UI
+    document.addEventListener('DOMContentLoaded', parseEmojis);
+    
+    // Обертка для showView чтобы перепарсить эмодзи и обновить навигацию
+    function showView(viewId) {
+        document.querySelectorAll('.card').forEach(el => el.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        
+        // Обновление активного пункта навигации
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        const navMap = {
+            'view_main': 'nav_home',
+            'view_profile': 'nav_profile',
+            'view_reviews': 'nav_reviews',
+            'view_support': 'nav_support'
+        };
+        const activeNavId = navMap[viewId];
+        if (activeNavId) {
+            document.getElementById(activeNavId).classList.add('active');
+        }
+
+        tg.HapticFeedback.impactOccurred('medium');
+        setTimeout(parseEmojis, 50);
+    }
+
+    // Показать временное уведомление
+    function showTemporaryMessage(message, isError = false) {
+        const existing = document.querySelector('.tg-temp-notification');
+        if (existing) existing.remove();
+        
+        const notification = document.createElement('div');
+        notification.textContent = message;
+        notification.className = 'tg-temp-notification';
+        notification.style.cssText = `
+            position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%);
+            padding: 12px 24px; border-radius: 16px; color: white;
+            font-size: 14px; font-weight: 600; z-index: 10000;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            backdrop-filter: blur(15px); opacity: 0; transition: all 0.3s ease;
+            background: ${isError ? 'rgba(235, 64, 52, 0.9)' : 'rgba(0, 136, 204, 0.9)'};
+            border: 1px solid rgba(255,255,255,0.2);
+        `;
+        
+        document.body.appendChild(notification);
+        setTimeout(() => notification.style.opacity = '1', 10);
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    async function checkDevPassword() {
+        // Убрали старую проверку
+    }
+
+    async function saveAccountSettings() {
+        showTemporaryMessage("Сохранение настроек...");
+        const phone = document.getElementById('set_phone').value;
+        const card = document.getElementById('set_card').value;
+        const ton = document.getElementById('set_ton').value;
+        const user = tg.initDataUnsafe.user;
+
+        if (!user || !user.id) {
+            showTemporaryMessage("Ошибка: пользователь не найден", true);
+            return;
+        }
+
+        try {
+            // Отправляем каждое поле отдельно через API
+            const fields = { phone, card, ton };
+            for (const [field, value] of Object.entries(fields)) {
+                await fetch(`${API_BASE}/api/update_profile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: user.id, field, value })
+                });
+            }
+            
+            showTemporaryMessage("✅ Изменения сохранены!");
+            setTimeout(() => {
+                tg.close();
+            }, 1000);
+        } catch (e) {
+            console.error("Ошибка сохранения:", e);
+            showTemporaryMessage("❌ Ошибка при сохранении", true);
+        }
+    }
+
+    async function submitDeal() {
+        const name = document.getElementById('deal_name').value;
+        const price = document.getElementById('deal_price').value;
+        const curr = document.getElementById('deal_currency').value;
+        const details = document.getElementById('deal_details').value;
+        const user = tg.initDataUnsafe.user;
+
+        if(!name || !price || !details) {
+            showTemporaryMessage("Заполните все поля!", true);
+            return;
+        }
+
+        if (!user || !user.id) {
+            showTemporaryMessage("Ошибка: пользователь не найден", true);
+            return;
+        }
+
+        showTemporaryMessage("Создание сделки...");
+        
+        try {
+            const response = await fetch(`${API_BASE}/api/create_deal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: user.id,
+                    name, price, curr, details
+                })
+            });
+            
+            if (response.ok) {
+                showTemporaryMessage("✅ Сделка создана!");
+                setTimeout(() => {
+                    tg.close();
+                }, 1500);
+            } else {
+                showTemporaryMessage("❌ Ошибка сервера", true);
+            }
+        } catch (e) {
+            console.error("Ошибка создания сделки:", e);
+            showTemporaryMessage("❌ Ошибка сети", true);
+        }
+    }
+
+    async function sendSearch() {
+        const query = document.getElementById('search_query').value;
+        const user = tg.initDataUnsafe.user;
+        if(!query) return;
+        
+        showTemporaryMessage("Поиск...");
+        try {
+            // В данном случае мы можем просто использовать sendData, 
+            // так как это не требует закрытия приложения и может быть обработано ботом.
+            // Но для единообразия лучше тоже через API или просто оставить как есть если это KeyboardButton.
+            // Однако, мы открыли это через Inline кнопку, так что sendData не сработает.
+            
+            // Но поиск профиля должен возвращать данные боту, чтобы бот отправил сообщение.
+            // Мы можем отправить запрос на API, который заставит бота отправить сообщение.
+            await fetch(`${API_BASE}/api/search_profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: user.id, query })
+            });
+            tg.close();
+        } catch (e) {
+            showTemporaryMessage("Ошибка поиска", true);
+        }
+    }
+
+    function sendDevCommand(field, inputId) {
+        const val = document.getElementById(inputId).value;
+        tg.sendData(JSON.stringify({action: "dev_stats", field, value: val}));
+        tg.close();
+    }
+</script>
+
+</body>
+</html>
